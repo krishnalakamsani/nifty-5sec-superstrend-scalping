@@ -1,5 +1,5 @@
 # Frontend Dockerfile - Multi-stage build
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package.json ./
 
 # Install dependencies
-RUN yarn install
+RUN yarn install --ignore-engines
 
 # Copy source code
 COPY . .
