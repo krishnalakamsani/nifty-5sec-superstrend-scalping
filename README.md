@@ -4,192 +4,217 @@ A full-stack automated options trading bot for Nifty Index using Dhan Trading AP
 
 ## Features
 
-### Trading Strategy
-- **Timeframe**: 5-second candles
-- **Indicator**: SuperTrend(7, 4) on Nifty Index spot
-- **Entry**: BUY ATM PUT on RED signal, BUY ATM CALL on GREEN signal
-- **Exit**: SuperTrend reversal or Trailing Stop Loss
-- **ATM Selection**: Nifty spot rounded to nearest 50
+- **SuperTrend Strategy**: SuperTrend(7,4) on 5-second candles
+- **ATM Strike Selection**: Nifty spot rounded to nearest 50
+- **Risk Management**: Max trades/day, daily loss limit, time-based exits
+- **Trailing Stop Loss**: Configurable parameters
+- **Paper/Live Modes**: Test without real money first
+- **Real-time Dashboard**: Live updates via WebSocket
 
-### Risk Management
-- Order quantity: 1 lot (50 qty)
-- Max trades/day: 5
-- Daily max loss: ₹2000
-- No new trades after 3:20 PM IST
-- Force square-off at 3:25 PM IST
-- Trailing SL with configurable parameters
+---
 
-### Dashboard Features
-- Live bot status (Running/Stopped)
-- Market status (Open/Closed)
-- Paper/Live trading modes
-- Real-time Nifty spot tracking with chart
-- SuperTrend signal display
-- Live position panel with unrealized P&L
-- Trailing SL tracking
-- Trade history table
-- Daily summary (P&L, trades, drawdown)
-- Live log viewer with filtering
-- Settings panel for API credentials & risk parameters
-
-## Tech Stack
-
-- **Backend**: Python FastAPI
-- **Frontend**: React + Tailwind CSS
-- **Database**: SQLite
-- **Real-time**: WebSocket
-- **Charts**: Recharts
-- **UI Components**: shadcn/ui
-
-## Setup Instructions
+## 🐳 Docker Deployment (Recommended)
 
 ### Prerequisites
-- Python 3.8+
-- Node.js 16+
-- Dhan Trading Account with API access
+- Docker & Docker Compose installed
+- EC2 instance with ports 80 and 8001 open
 
-### Backend Setup
-
-```bash
-cd backend
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# or
-venv\Scripts\activate  # Windows
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Create .env file
-cp .env.example .env
-# Edit .env with your settings
-
-# Run server
-uvicorn server:app --host 0.0.0.0 --port 8001 --reload
-```
-
-### Frontend Setup
+### Quick Start
 
 ```bash
-cd frontend
-
-# Install dependencies
-yarn install
-
-# Create .env file
-cp .env.example .env
-# Edit .env with your backend URL
-
-# Run development server
-yarn start
-```
-
-### EC2 Ubuntu Deployment
-
-```bash
-# Update system
-sudo apt update && sudo apt upgrade -y
-
-# Install Python
-sudo apt install python3 python3-pip python3-venv -y
-
-# Install Node.js
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt install nodejs -y
-
-# Clone repository
+# Clone the repository
 git clone <your-repo-url>
 cd niftyalgo-terminal
 
-# Setup backend
-cd backend
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+# Create environment file
+cp .env.example .env
 
-# Setup frontend
-cd ../frontend
-npm install
-npm run build
+# Edit .env with your EC2 public IP
+nano .env
+# Set: REACT_APP_BACKEND_URL=http://YOUR_EC2_PUBLIC_IP:8001
 
-# Run with PM2 (recommended)
-npm install -g pm2
-pm2 start server:app --name backend --interpreter python3
-pm2 serve build 3000 --name frontend --spa
-pm2 save
-pm2 startup
+# Build and run
+docker-compose up -d --build
+
+# Check status
+docker-compose ps
+
+# View logs
+docker-compose logs -f
 ```
 
-## API Endpoints
+### Access the Application
+- **Frontend**: `http://YOUR_EC2_IP` (port 80)
+- **Backend API**: `http://YOUR_EC2_IP:8001/api`
 
-### Status & Market Data
-- `GET /api/status` - Bot status
-- `GET /api/market/nifty` - Nifty LTP & SuperTrend
-- `GET /api/position` - Current position
-- `GET /api/trades` - Trade history
-- `GET /api/summary` - Daily summary
-- `GET /api/logs` - Bot logs
-- `GET /api/config` - Current configuration
+### Useful Commands
 
-### Bot Control
-- `POST /api/bot/start` - Start trading bot
-- `POST /api/bot/stop` - Stop trading bot
-- `POST /api/bot/squareoff` - Force square off
+```bash
+# Stop containers
+docker-compose down
 
-### Configuration
-- `POST /api/config/update` - Update settings
-- `POST /api/config/mode?mode=paper|live` - Switch mode
+# Restart containers
+docker-compose restart
 
-### WebSocket
-- `WS /ws` - Real-time updates
+# Rebuild after code changes
+docker-compose up -d --build
 
-## Configuration
+# View backend logs
+docker-compose logs -f backend
 
-### Environment Variables
+# View frontend logs
+docker-compose logs -f frontend
 
-**Backend (.env)**
-```
-MONGO_URL=mongodb://localhost:27017  # Not used, SQLite is default
-DB_NAME=trading_db
-CORS_ORIGINS=*
+# Access backend container shell
+docker-compose exec backend bash
+
+# Backup database
+docker cp niftyalgo-backend:/app/data/trading.db ./backup_trading.db
 ```
 
-**Frontend (.env)**
+---
+
+## 🖥️ EC2 Ubuntu Setup (Complete Guide)
+
+### 1. Launch EC2 Instance
+- **AMI**: Ubuntu 22.04 LTS
+- **Instance Type**: t3.small or higher
+- **Storage**: 20GB minimum
+- **Security Group**: Open ports 22, 80, 8001
+
+### 2. Connect and Install Docker
+
+```bash
+# Connect to EC2
+ssh -i your-key.pem ubuntu@YOUR_EC2_IP
+
+# Update system
+sudo apt update && sudo apt upgrade -y
+
+# Install Docker
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+sudo usermod -aG docker ubuntu
+
+# Install Docker Compose
+sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+
+# Logout and login again for docker group to take effect
+exit
 ```
-REACT_APP_BACKEND_URL=http://localhost:8001
+
+### 3. Deploy Application
+
+```bash
+# Clone repo
+git clone <your-repo-url>
+cd niftyalgo-terminal
+
+# Configure environment
+cp .env.example .env
+nano .env
+# Set REACT_APP_BACKEND_URL to your EC2 public IP
+
+# Build and run
+docker-compose up -d --build
+
+# Verify
+docker-compose ps
+curl http://localhost:8001/api/status
 ```
 
-### Risk Parameters (via Settings UI)
-- `order_qty`: Order quantity (default: 50)
-- `max_trades_per_day`: Max trades allowed (default: 5)
-- `daily_max_loss`: Stop trading if loss exceeds (default: 2000)
-- `trail_start_profit`: Activate trailing at this profit (default: 10)
-- `trail_step`: Trail step size (default: 5)
-- `trailing_sl_distance`: Distance from peak (default: 10)
+### 4. Configure Security Group
+Ensure these inbound rules:
+| Port | Protocol | Source | Purpose |
+|------|----------|--------|---------|
+| 22 | TCP | Your IP | SSH |
+| 80 | TCP | 0.0.0.0/0 | Frontend |
+| 8001 | TCP | 0.0.0.0/0 | Backend API |
 
-## Dhan API Setup
+---
 
-1. Login to [web.dhan.co](https://web.dhan.co)
-2. Go to My Profile → DhanHQ Trading APIs
-3. Generate Access Token
-4. Copy Client ID and Access Token
-5. Enter in Settings panel in the dashboard
+## 🔧 Configuration
 
-**Note**: Access token expires daily. Update it each morning before market opens.
+### Update Dhan Credentials
+1. Open `http://YOUR_EC2_IP` in browser
+2. Click Settings (⚙️ icon)
+3. Enter Client ID and Access Token from [web.dhan.co](https://web.dhan.co)
+4. Click "Save Credentials"
 
-## Important Notes
+**Note**: Dhan access token expires daily. Update it each morning before market opens.
 
-- **Paper Mode**: Simulates trades without real orders
-- **Live Mode**: Places real orders with your Dhan account
-- **Market Hours**: Trading only during 9:15 AM - 3:30 PM IST
-- **Weekdays Only**: No trading on weekends
+### Risk Parameters
+Configurable via Settings → Risk Parameters:
+- Order Quantity (default: 50 = 1 lot)
+- Max Trades/Day (default: 5)
+- Daily Max Loss (default: ₹2000)
+- Trail Start Profit (default: 10 points)
+- Trail Step (default: 5 points)
+- Trailing SL Distance (default: 10 points)
 
-## Disclaimer
+---
+
+## 📊 API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/status | Bot status |
+| GET | /api/market/nifty | Nifty LTP & SuperTrend |
+| GET | /api/position | Current position |
+| GET | /api/trades | Trade history |
+| GET | /api/summary | Daily summary |
+| GET | /api/logs | Bot logs |
+| GET | /api/config | Configuration |
+| POST | /api/bot/start | Start trading |
+| POST | /api/bot/stop | Stop trading |
+| POST | /api/bot/squareoff | Force exit |
+| POST | /api/config/update | Update settings |
+| WS | /ws | Real-time updates |
+
+---
+
+## 🚀 Production Tips
+
+### Enable HTTPS with Let's Encrypt
+
+```bash
+# Install certbot
+sudo apt install certbot python3-certbot-nginx -y
+
+# Get certificate (replace with your domain)
+sudo certbot --nginx -d yourdomain.com
+
+# Auto-renewal is configured automatically
+```
+
+### Setup Auto-restart on Boot
+
+```bash
+# Enable Docker service
+sudo systemctl enable docker
+
+# The containers will auto-restart due to restart: unless-stopped policy
+```
+
+### Monitor Resources
+
+```bash
+# View container stats
+docker stats
+
+# View disk usage
+docker system df
+```
+
+---
+
+## ⚠️ Disclaimer
 
 This is for educational purposes only. Trading in derivatives involves substantial risk of loss. Past performance is not indicative of future results. Use at your own risk.
 
-## License
+---
+
+## 📝 License
 
 MIT License
