@@ -1,7 +1,7 @@
 import React, { useContext } from "react";
-import { AppContext } from "../App";
+import { AppContext } from "@/App";
 import { Settings, Wifi, WifiOff } from "lucide-react";
-import { Button } from "./ui/button";
+import { Button } from "@/components/ui/button";
 
 const TopBar = ({ onSettingsClick }) => {
   const { botStatus, wsConnected } = useContext(AppContext);

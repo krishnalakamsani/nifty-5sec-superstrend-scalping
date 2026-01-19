@@ -1,9 +1,9 @@
 import React, { useContext, useState } from "react";
-import { AppContext } from "../App";
+import { AppContext } from "@/App";
 import { Play, Square, XCircle, RefreshCw } from "lucide-react";
-import { Button } from "./ui/button";
-import { Switch } from "./ui/switch";
-import { Label } from "./ui/label";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,7 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "./ui/alert-dialog";
+} from "@/components/ui/alert-dialog";
 
 const ControlsPanel = () => {
   const { botStatus, position, startBot, stopBot, squareOff, setMode } =

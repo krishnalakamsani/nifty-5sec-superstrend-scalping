@@ -1,5 +1,5 @@
 import React, { useContext } from "react";
-import { AppContext } from "../App";
+import { AppContext } from "@/App";
 import { TrendingUp, TrendingDown, AlertOctagon, BarChart3 } from "lucide-react";
 
 const DailySummary = () => {

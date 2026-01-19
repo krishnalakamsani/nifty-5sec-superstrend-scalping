@@ -1,6 +1,6 @@
 import React, { useContext } from "react";
-import { AppContext } from "../App";
-import { ScrollArea } from "./ui/scroll-area";
+import { AppContext } from "@/App";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { TrendingUp, TrendingDown } from "lucide-react";
 
 const TradesTable = () => {

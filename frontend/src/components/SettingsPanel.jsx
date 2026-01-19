@@ -1,16 +1,16 @@
 import React, { useContext, useState } from "react";
-import { AppContext } from "../App";
+import { AppContext } from "@/App";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "./ui/dialog";
-import { Button } from "./ui/button";
-import { Input } from "./ui/input";
-import { Label } from "./ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Key, Settings, ShieldCheck, Eye, EyeOff, Save } from "lucide-react";
 
 const SettingsPanel = ({ onClose }) => {

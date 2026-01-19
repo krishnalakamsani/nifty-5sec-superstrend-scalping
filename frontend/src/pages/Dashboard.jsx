@@ -1,13 +1,13 @@
 import React, { useContext, useState } from "react";
-import { AppContext } from "../App";
-import TopBar from "../components/TopBar";
-import PositionPanel from "../components/PositionPanel";
-import ControlsPanel from "../components/ControlsPanel";
-import NiftyTracker from "../components/NiftyTracker";
-import TradesTable from "../components/TradesTable";
-import DailySummary from "../components/DailySummary";
-import LogsViewer from "../components/LogsViewer";
-import SettingsPanel from "../components/SettingsPanel";
+import { AppContext } from "@/App";
+import TopBar from "@/components/TopBar";
+import PositionPanel from "@/components/PositionPanel";
+import ControlsPanel from "@/components/ControlsPanel";
+import NiftyTracker from "@/components/NiftyTracker";
+import TradesTable from "@/components/TradesTable";
+import DailySummary from "@/components/DailySummary";
+import LogsViewer from "@/components/LogsViewer";
+import SettingsPanel from "@/components/SettingsPanel";
 
 const Dashboard = () => {
   const context = useContext(AppContext);

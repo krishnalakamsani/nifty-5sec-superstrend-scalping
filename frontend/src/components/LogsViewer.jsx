@@ -1,15 +1,15 @@
 import React, { useContext, useState, useEffect, useRef } from "react";
-import { AppContext } from "../App";
-import { ScrollArea } from "./ui/scroll-area";
+import { AppContext } from "@/App";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { RefreshCw, Filter } from "lucide-react";
-import { Button } from "./ui/button";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "./ui/select";
+} from "@/components/ui/select";
 
 const LogsViewer = () => {
   const { logs, refreshLogs } = useContext(AppContext);

@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useState, useRef } from "react";
-import { AppContext } from "../App";
+import { AppContext } from "@/App";
 import { TrendingUp, TrendingDown, Activity } from "lucide-react";
 import {
   AreaChart,
