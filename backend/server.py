@@ -230,9 +230,9 @@ async def load_config():
                 rows = await cursor.fetchall()
                 for key, value in rows:
                     if key in config:
-                        if key in ['order_qty', 'max_trades_per_day']:
+                        if key in ['order_qty', 'max_trades_per_day', 'candle_interval', 'supertrend_period']:
                             config[key] = int(value)
-                        elif key in ['daily_max_loss', 'trail_start_profit', 'trail_step', 'trailing_sl_distance']:
+                        elif key in ['daily_max_loss', 'trail_start_profit', 'trail_step', 'trailing_sl_distance', 'supertrend_multiplier']:
                             config[key] = float(value)
                         else:
                             config[key] = value
