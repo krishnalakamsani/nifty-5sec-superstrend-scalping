@@ -645,12 +645,38 @@ class TradingBot:
                 # Update position PnL
                 if self.current_position:
                     security_id = self.current_position.get('security_id', '')
-                    if security_id and self.dhan:
+                    
+                    # Paper mode - simulate option price movement
+                    if bot_state['mode'] == 'paper' or security_id.startswith('SIM_'):
+                        # Simulate option price based on Nifty movement
+                        strike = self.current_position.get('strike', 0)
+                        option_type = self.current_position.get('option_type', '')
+                        nifty_ltp = bot_state['nifty_ltp']
+                        
+                        if strike and nifty_ltp:
+                            # Simplified delta-based simulation
+                            if option_type == 'CE':
+                                intrinsic = max(0, nifty_ltp - strike)
+                            else:  # PE
+                                intrinsic = max(0, strike - nifty_ltp)
+                            
+                            # Add some time value that decays
+                            time_value = 50 + (abs(nifty_ltp - strike) / 100)
+                            simulated_ltp = intrinsic + time_value
+                            
+                            # Add some random movement to simulate market
+                            import random
+                            simulated_ltp += random.uniform(-2, 2)
+                            simulated_ltp = max(1, round(simulated_ltp, 2))
+                            
+                            bot_state['current_option_ltp'] = simulated_ltp
+                            await self.check_trailing_sl(simulated_ltp)
+                    
+                    # Live mode - fetch real option LTP
+                    elif security_id and self.dhan:
                         option_ltp = await self.dhan.get_option_ltp(security_id)
                         if option_ltp > 0:
                             bot_state['current_option_ltp'] = option_ltp
-                            
-                            # Check trailing SL
                             await self.check_trailing_sl(option_ltp)
                 
                 # Broadcast state update
