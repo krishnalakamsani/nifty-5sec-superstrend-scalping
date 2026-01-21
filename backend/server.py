@@ -403,17 +403,54 @@ class DhanAPI:
             logger.error(f"Error fetching option LTP: {e}")
         return 0
     
-    async def get_option_chain(self, underlying_scrip: int = 13) -> dict:
+    async def get_option_chain(self, underlying_scrip: int = 13, expiry: str = None) -> dict:
         """Get option chain for Nifty"""
         try:
+            # If no expiry provided, get nearest Thursday
+            if not expiry:
+                ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+                days_until_thursday = (3 - ist.weekday()) % 7
+                if days_until_thursday == 0 and ist.hour >= 15:
+                    days_until_thursday = 7
+                expiry_date = ist + timedelta(days=days_until_thursday)
+                expiry = expiry_date.strftime("%Y-%m-%d")
+            
             response = self.dhan.option_chain(
                 under_security_id=str(underlying_scrip),
-                under_exchange_segment='IDX_I'
+                under_exchange_segment='IDX_I',
+                expiry=expiry
             )
+            logger.info(f"Option chain response for expiry {expiry}: {str(response)[:500]}")
             return response if response else {}
         except Exception as e:
             logger.error(f"Error fetching option chain: {e}")
         return {}
+    
+    async def get_atm_option_security_id(self, strike: int, option_type: str, expiry: str = None) -> str:
+        """Get security ID for ATM option from option chain"""
+        try:
+            chain = await self.get_option_chain(expiry=expiry)
+            
+            if chain and chain.get('status') == 'success':
+                data = chain.get('data', {})
+                if isinstance(data, dict) and 'data' in data:
+                    data = data.get('data', [])
+                
+                # Search for matching strike and option type
+                for item in data if isinstance(data, list) else []:
+                    item_strike = item.get('strikePrice', 0)
+                    item_type = item.get('optionType', '')  # CE or PE
+                    
+                    if int(item_strike) == strike and item_type == option_type:
+                        security_id = item.get('securityId') or item.get('security_id')
+                        if security_id:
+                            logger.info(f"Found security ID {security_id} for {strike} {option_type}")
+                            return str(security_id)
+            
+            logger.warning(f"Could not find security ID for strike {strike} {option_type}")
+        except Exception as e:
+            logger.error(f"Error getting ATM option security ID: {e}")
+        return ""
     
     async def place_order(self, security_id: str, transaction_type: str, qty: int) -> dict:
         """Place a market order"""
