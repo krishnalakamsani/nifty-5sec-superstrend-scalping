@@ -348,137 +348,108 @@ supertrend_indicator = SuperTrend(period=config['supertrend_period'], multiplier
 
 # Dhan API helper class
 class DhanAPI:
-    BASE_URL = "https://api.dhan.co/v2"
+    # Exchange segment constants
+    NSE = dhanhq.NSE
+    NSE_FNO = dhanhq.NSE_FNO
+    IDX = dhanhq.IDX
     
     def __init__(self, access_token: str, client_id: str):
         self.access_token = access_token
         self.client_id = client_id
-    
-    def _headers(self):
-        return {
-            "access-token": self.access_token,
-            "client-id": self.client_id,
-            "Content-Type": "application/json"
-        }
+        self.dhan = dhanhq(client_id, access_token)
     
     async def get_nifty_ltp(self) -> float:
-        """Get Nifty 50 spot LTP using market quote endpoint"""
-        async with httpx.AsyncClient() as client:
-            try:
-                # Use market quote endpoint for JSON response
-                response = await client.post(
-                    f"{self.BASE_URL}/marketfeed/ltp",
-                    json={
-                        "IDX_I": [13]  # 13 is Nifty 50 index, IDX_I for index segment
-                    },
-                    headers=self._headers(),
-                    timeout=10.0
-                )
-                logger.info(f"Dhan LTP Response: {response.status_code} - {response.text[:200] if response.text else 'empty'}")
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    # Try different response structures
-                    if 'data' in data:
-                        # Check IDX_I segment
-                        if 'IDX_I' in data['data']:
-                            ltp_data = data['data']['IDX_I'].get('13', {})
-                            if isinstance(ltp_data, dict):
-                                return float(ltp_data.get('last_price', 0))
-                            elif isinstance(ltp_data, (int, float)):
-                                return float(ltp_data)
-                        # Check NSE_INDEX segment
-                        if 'NSE_INDEX' in data['data']:
-                            ltp_data = data['data']['NSE_INDEX'].get('13', {})
-                            if isinstance(ltp_data, dict):
-                                return float(ltp_data.get('last_price', 0))
-                            elif isinstance(ltp_data, (int, float)):
-                                return float(ltp_data)
-                    # Direct structure
-                    if '13' in data:
-                        return float(data['13'].get('last_price', data['13']))
-                    logger.warning(f"Unexpected Dhan response structure: {data}")
-            except Exception as e:
-                logger.error(f"Error fetching Nifty LTP: {e}")
+        """Get Nifty 50 spot LTP using dhanhq library"""
+        try:
+            # Use the official dhanhq library
+            # Security ID 13 is NIFTY 50 Index
+            response = self.dhan.intraday_minute_data(
+                security_id='13',
+                exchange_segment=self.IDX,
+                instrument_type='INDEX'
+            )
+            
+            logger.info(f"Dhan intraday response: {response}")
+            
+            if response and response.get('status') == 'success':
+                data = response.get('data', [])
+                if data and len(data) > 0:
+                    # Get the latest candle's close price
+                    latest = data[-1]
+                    return float(latest.get('close', 0))
+            
+            # Fallback: Try LTP API
+            ltp_response = self.dhan.get_ltp(
+                security_id='13',
+                exchange_segment=self.IDX
+            )
+            logger.info(f"Dhan LTP response: {ltp_response}")
+            
+            if ltp_response and 'data' in ltp_response:
+                ltp_data = ltp_response.get('data', {})
+                if 'last_price' in ltp_data:
+                    return float(ltp_data['last_price'])
+                # Try nested structure
+                for key in ltp_data:
+                    if isinstance(ltp_data[key], dict) and 'last_price' in ltp_data[key]:
+                        return float(ltp_data[key]['last_price'])
+                    
+        except Exception as e:
+            logger.error(f"Error fetching Nifty LTP: {e}")
         return 0
     
     async def get_option_ltp(self, security_id: str) -> float:
         """Get option LTP"""
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(
-                    f"{self.BASE_URL}/marketfeed/ltp",
-                    json={"NSE_FNO": [int(security_id)]},
-                    headers=self._headers(),
-                    timeout=10.0
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    return data.get('data', {}).get('NSE_FNO', {}).get(security_id, {}).get('last_price', 0)
-            except Exception as e:
-                logger.error(f"Error fetching option LTP: {e}")
+        try:
+            response = self.dhan.get_ltp(
+                security_id=security_id,
+                exchange_segment=self.NSE_FNO
+            )
+            if response and 'data' in response:
+                ltp_data = response.get('data', {})
+                if 'last_price' in ltp_data:
+                    return float(ltp_data['last_price'])
+        except Exception as e:
+            logger.error(f"Error fetching option LTP: {e}")
         return 0
     
     async def get_option_chain(self, underlying_scrip: int = 13) -> dict:
         """Get option chain for Nifty"""
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(
-                    f"{self.BASE_URL}/optionchain",
-                    json={
-                        "UnderlyingScrip": underlying_scrip,
-                        "UnderlyingSeg": "IDX_I"
-                    },
-                    headers=self._headers(),
-                    timeout=15.0
-                )
-                if response.status_code == 200:
-                    return response.json()
-            except Exception as e:
-                logger.error(f"Error fetching option chain: {e}")
+        try:
+            response = self.dhan.option_chain(
+                under_security_id=underlying_scrip,
+                under_exchange_segment=self.IDX
+            )
+            return response if response else {}
+        except Exception as e:
+            logger.error(f"Error fetching option chain: {e}")
         return {}
     
     async def place_order(self, security_id: str, transaction_type: str, qty: int) -> dict:
         """Place a market order"""
-        async with httpx.AsyncClient() as client:
-            try:
-                order_data = {
-                    "dhanClientId": self.client_id,
-                    "transactionType": transaction_type,  # BUY or SELL
-                    "exchangeSegment": "NSE_FNO",
-                    "productType": "INTRADAY",
-                    "orderType": "MARKET",
-                    "validity": "DAY",
-                    "securityId": security_id,
-                    "quantity": str(qty),
-                    "disclosedQuantity": "0",
-                    "price": "0",
-                    "triggerPrice": "0"
-                }
-                response = await client.post(
-                    f"{self.BASE_URL}/orders",
-                    json=order_data,
-                    headers=self._headers(),
-                    timeout=15.0
-                )
-                return response.json()
-            except Exception as e:
-                logger.error(f"Error placing order: {e}")
-                return {"status": "error", "message": str(e)}
+        try:
+            response = self.dhan.place_order(
+                security_id=security_id,
+                exchange_segment=self.NSE_FNO,
+                transaction_type=self.dhan.BUY if transaction_type == "BUY" else self.dhan.SELL,
+                quantity=qty,
+                order_type=self.dhan.MARKET,
+                product_type=self.dhan.INTRA,
+                price=0
+            )
+            return response if response else {"status": "error", "message": "No response"}
+        except Exception as e:
+            logger.error(f"Error placing order: {e}")
+            return {"status": "error", "message": str(e)}
     
     async def get_positions(self) -> list:
         """Get current positions"""
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.get(
-                    f"{self.BASE_URL}/positions",
-                    headers=self._headers(),
-                    timeout=10.0
-                )
-                if response.status_code == 200:
-                    return response.json().get('data', [])
-            except Exception as e:
-                logger.error(f"Error fetching positions: {e}")
+        try:
+            response = self.dhan.get_positions()
+            if response and 'data' in response:
+                return response.get('data', [])
+        except Exception as e:
+            logger.error(f"Error fetching positions: {e}")
         return []
 
 # Trading Bot Engine
