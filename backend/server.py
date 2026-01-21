@@ -718,7 +718,7 @@ class TradingBot:
     
     async def enter_position(self, option_type: str, strike: int, nifty_ltp: float):
         """Enter a new position"""
-        # Get nearest weekly expiry (simplified - would need actual expiry dates)
+        # Get nearest weekly expiry
         ist = get_ist_time()
         days_until_thursday = (3 - ist.weekday()) % 7
         if days_until_thursday == 0 and ist.hour >= 15:
@@ -730,24 +730,40 @@ class TradingBot:
         
         # In paper mode, simulate entry
         if bot_state['mode'] == 'paper':
-            # Simulate option price (rough approximation)
-            simulated_price = abs(nifty_ltp - strike) / 10 + 50  # Simplified
-            entry_price = simulated_price
-            security_id = f"NIFTY{strike}{option_type}"
+            # Simulate option price (rough approximation based on moneyness)
+            intrinsic = max(0, nifty_ltp - strike) if option_type == 'CE' else max(0, strike - nifty_ltp)
+            time_value = 50 + (abs(nifty_ltp - strike) / 100)  # Simplified time value
+            simulated_price = intrinsic + time_value
+            entry_price = round(simulated_price, 2)
+            security_id = f"SIM_NIFTY_{strike}_{option_type}"
+            
+            logger.info(f"Paper trade: {option_type} {strike} @ {entry_price}")
         else:
-            # Live trading - place actual order
-            if self.dhan:
-                # Would need to get actual security ID from option chain
-                chain = await self.dhan.get_option_chain()
-                # Find security ID for the strike
-                security_id = ""  # Would extract from chain
-                
-                result = await self.dhan.place_order(security_id, "BUY", config['order_qty'])
-                if not result.get('orderId'):
-                    logger.error(f"Failed to place entry order: {result}")
-                    return
-                
-                entry_price = result.get('price', 0)
+            # Live trading - get security ID and place order
+            if not self.dhan:
+                logger.error("Dhan API not initialized")
+                return
+            
+            # Get security ID from option chain
+            security_id = await self.dhan.get_atm_option_security_id(strike, option_type, expiry)
+            
+            if not security_id:
+                logger.error(f"Could not find security ID for {strike} {option_type}")
+                return
+            
+            # Place market order
+            result = await self.dhan.place_order(security_id, "BUY", config['order_qty'])
+            
+            if not result.get('orderId') and result.get('status') != 'success':
+                logger.error(f"Failed to place entry order: {result}")
+                return
+            
+            # Get entry price from order or current LTP
+            entry_price = result.get('price', 0)
+            if not entry_price:
+                entry_price = await self.dhan.get_option_ltp(security_id)
+            
+            logger.info(f"Live trade placed: {option_type} {strike} @ {entry_price}, Order: {result}")
         
         # Save position
         self.current_position = {
@@ -755,16 +771,17 @@ class TradingBot:
             'option_type': option_type,
             'strike': strike,
             'expiry': expiry,
-            'security_id': security_id if bot_state['mode'] == 'live' else f"SIM_{strike}_{option_type}",
+            'security_id': security_id,
             'entry_time': datetime.now(timezone.utc).isoformat()
         }
-        self.entry_price = entry_price if bot_state['mode'] == 'live' else 100  # Simulated entry
+        self.entry_price = entry_price
         self.trailing_sl = None
         self.highest_profit = 0
         
         bot_state['current_position'] = self.current_position
         bot_state['entry_price'] = self.entry_price
         bot_state['daily_trades'] += 1
+        bot_state['current_option_ltp'] = entry_price
         
         # Save to database
         async with aiosqlite.connect(DB_PATH) as db:
