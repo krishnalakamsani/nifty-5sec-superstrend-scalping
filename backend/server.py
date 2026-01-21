@@ -14,6 +14,7 @@ import sqlite3
 import aiosqlite
 from contextlib import asynccontextmanager
 import httpx
+from dhanhq import dhanhq
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
