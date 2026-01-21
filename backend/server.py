@@ -361,19 +361,42 @@ class DhanAPI:
         }
     
     async def get_nifty_ltp(self) -> float:
-        """Get Nifty 50 spot LTP"""
+        """Get Nifty 50 spot LTP using market quote endpoint"""
         async with httpx.AsyncClient() as client:
             try:
-                # Nifty 50 Index security ID
+                # Use market quote endpoint for JSON response
                 response = await client.post(
                     f"{self.BASE_URL}/marketfeed/ltp",
-                    json={"NSE_INDEX": [13]},  # 13 is Nifty 50 index
+                    json={
+                        "IDX_I": [13]  # 13 is Nifty 50 index, IDX_I for index segment
+                    },
                     headers=self._headers(),
                     timeout=10.0
                 )
+                logger.info(f"Dhan LTP Response: {response.status_code} - {response.text[:200] if response.text else 'empty'}")
+                
                 if response.status_code == 200:
                     data = response.json()
-                    return data.get('data', {}).get('NSE_INDEX', {}).get('13', {}).get('last_price', 0)
+                    # Try different response structures
+                    if 'data' in data:
+                        # Check IDX_I segment
+                        if 'IDX_I' in data['data']:
+                            ltp_data = data['data']['IDX_I'].get('13', {})
+                            if isinstance(ltp_data, dict):
+                                return float(ltp_data.get('last_price', 0))
+                            elif isinstance(ltp_data, (int, float)):
+                                return float(ltp_data)
+                        # Check NSE_INDEX segment
+                        if 'NSE_INDEX' in data['data']:
+                            ltp_data = data['data']['NSE_INDEX'].get('13', {})
+                            if isinstance(ltp_data, dict):
+                                return float(ltp_data.get('last_price', 0))
+                            elif isinstance(ltp_data, (int, float)):
+                                return float(ltp_data)
+                    # Direct structure
+                    if '13' in data:
+                        return float(data['13'].get('last_price', data['13']))
+                    logger.warning(f"Unexpected Dhan response structure: {data}")
             except Exception as e:
                 logger.error(f"Error fetching Nifty LTP: {e}")
         return 0
