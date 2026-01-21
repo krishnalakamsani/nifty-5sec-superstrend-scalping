@@ -356,7 +356,7 @@ class DhanAPI:
     async def get_nifty_ltp(self) -> float:
         """Get Nifty 50 spot LTP using dhanhq library"""
         try:
-            # Use quote_data with correct format - INDEX segment with security ID 13 for NIFTY
+            # Use quote_data with correct format
             response = self.dhan.quote_data({
                 "IDX_I": [13]  # IDX_I for Index, 13 is NIFTY 50
             })
@@ -364,28 +364,20 @@ class DhanAPI:
             logger.info(f"Dhan quote response: {response}")
             
             if response and response.get('status') == 'success':
+                # Navigate nested structure: data.data.IDX_I.13.last_price
                 data = response.get('data', {})
-                # Navigate the response structure
+                if isinstance(data, dict) and 'data' in data:
+                    data = data.get('data', {})
+                
                 idx_data = data.get('IDX_I', {}).get('13', {})
                 if idx_data:
-                    ltp = idx_data.get('last_price') or idx_data.get('ltp') or idx_data.get('close')
-                    if ltp:
+                    ltp = idx_data.get('last_price')
+                    if ltp and ltp > 0:
                         return float(ltp)
-            
-            # Fallback: Try intraday data
-            response = self.dhan.intraday_minute_data(
-                security_id='13',
-                exchange_segment='IDX_I',
-                instrument_type='INDEX'
-            )
-            
-            logger.info(f"Dhan intraday response: {response}")
-            
-            if response and response.get('status') == 'success':
-                data = response.get('data', [])
-                if data and len(data) > 0:
-                    latest = data[-1]
-                    return float(latest.get('close', 0))
+                    # Fallback to close price from OHLC
+                    ohlc = idx_data.get('ohlc', {})
+                    if ohlc and ohlc.get('close'):
+                        return float(ohlc.get('close'))
                     
         except Exception as e:
             logger.error(f"Error fetching Nifty LTP: {e}")
@@ -399,10 +391,13 @@ class DhanAPI:
             })
             if response and response.get('status') == 'success':
                 data = response.get('data', {})
-                fno_data = data.get('NSE_FNO', {}).get(security_id, {})
+                if isinstance(data, dict) and 'data' in data:
+                    data = data.get('data', {})
+                
+                fno_data = data.get('NSE_FNO', {}).get(str(security_id), {})
                 if fno_data:
-                    ltp = fno_data.get('last_price') or fno_data.get('ltp')
-                    if ltp:
+                    ltp = fno_data.get('last_price')
+                    if ltp and ltp > 0:
                         return float(ltp)
         except Exception as e:
             logger.error(f"Error fetching option LTP: {e}")
