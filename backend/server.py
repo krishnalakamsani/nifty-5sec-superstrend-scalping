@@ -428,57 +428,63 @@ class DhanAPI:
     async def get_nearest_expiry(self) -> str:
         """Get nearest expiry date from Dhan API"""
         try:
-            response = self.dhan.expiry_list(
-                under_security_id='13',
-                under_exchange_segment='IDX_I'
-            )
-            logger.info(f"Expiry list response: {response}")
-            
-            if response and response.get('status') == 'success':
-                data = response.get('data', {})
-                if isinstance(data, dict) and 'data' in data:
-                    data = data.get('data', [])
+            # Try different segment names
+            for segment in ['IDX_I', 'NSE_FNO', 'INDEX']:
+                response = self.dhan.expiry_list(
+                    under_security_id='13',
+                    under_exchange_segment=segment
+                )
+                logger.info(f"Expiry list response for {segment}: {response}")
                 
-                expiries = data if isinstance(data, list) else []
-                
-                if expiries:
-                    # Sort expiries and get the nearest one
-                    today = datetime.now().date()
+                if response and response.get('status') == 'success':
+                    data = response.get('data', {})
+                    if isinstance(data, dict) and 'data' in data:
+                        expiries = data.get('data', [])
+                    elif isinstance(data, list):
+                        expiries = data
+                    else:
+                        expiries = []
                     
-                    valid_expiries = []
-                    for exp in expiries:
-                        try:
-                            # Handle different date formats
-                            if isinstance(exp, str):
-                                if '-' in exp:
-                                    exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
-                                elif '/' in exp:
-                                    exp_date = datetime.strptime(exp, "%d/%m/%Y").date()
-                                else:
-                                    continue
-                                
-                                if exp_date >= today:
-                                    valid_expiries.append((exp_date, exp))
-                        except:
-                            continue
-                    
-                    if valid_expiries:
-                        valid_expiries.sort(key=lambda x: x[0])
-                        nearest = valid_expiries[0][1]
-                        logger.info(f"Nearest expiry: {nearest}")
-                        return nearest
+                    if expiries and isinstance(expiries, list):
+                        today = datetime.now().date()
+                        
+                        valid_expiries = []
+                        for exp in expiries:
+                            try:
+                                if isinstance(exp, str):
+                                    if '-' in exp:
+                                        exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
+                                    elif '/' in exp:
+                                        exp_date = datetime.strptime(exp, "%d/%m/%Y").date()
+                                    else:
+                                        continue
+                                    
+                                    if exp_date >= today:
+                                        valid_expiries.append((exp_date, exp))
+                            except:
+                                continue
+                        
+                        if valid_expiries:
+                            valid_expiries.sort(key=lambda x: x[0])
+                            nearest = valid_expiries[0][1]
+                            logger.info(f"Nearest expiry: {nearest}")
+                            return nearest
             
-            logger.warning("Could not get expiry list, using calculated expiry")
+            logger.warning("Could not get expiry list from API")
         except Exception as e:
             logger.error(f"Error getting expiry list: {e}")
         
         # Fallback: calculate next Monday (Nifty weekly now expires on Monday)
+        # Jan 27, 2026 is a Monday
         ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
         days_until_monday = (7 - ist.weekday()) % 7
-        if days_until_monday == 0 and ist.hour >= 15:
-            days_until_monday = 7
+        if days_until_monday == 0:
+            if ist.hour >= 15 and ist.minute >= 30:
+                days_until_monday = 7
         expiry_date = ist + timedelta(days=days_until_monday)
-        return expiry_date.strftime("%Y-%m-%d")
+        calculated_expiry = expiry_date.strftime("%Y-%m-%d")
+        logger.info(f"Using calculated expiry: {calculated_expiry}")
+        return calculated_expiry
     
     async def get_atm_option_security_id(self, strike: int, option_type: str, expiry: str = None) -> str:
         """Get security ID for ATM option from option chain"""
