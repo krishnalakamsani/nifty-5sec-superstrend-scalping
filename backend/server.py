@@ -406,14 +406,13 @@ class DhanAPI:
     async def get_option_chain(self, underlying_scrip: int = 13, expiry: str = None) -> dict:
         """Get option chain for Nifty"""
         try:
-            # If no expiry provided, get nearest Thursday
+            # If no expiry provided, get nearest expiry from API
             if not expiry:
-                ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
-                days_until_thursday = (3 - ist.weekday()) % 7
-                if days_until_thursday == 0 and ist.hour >= 15:
-                    days_until_thursday = 7
-                expiry_date = ist + timedelta(days=days_until_thursday)
-                expiry = expiry_date.strftime("%Y-%m-%d")
+                expiry = await self.get_nearest_expiry()
+            
+            if not expiry:
+                logger.error("Could not determine expiry date")
+                return {}
             
             response = self.dhan.option_chain(
                 under_security_id=str(underlying_scrip),
@@ -426,9 +425,68 @@ class DhanAPI:
             logger.error(f"Error fetching option chain: {e}")
         return {}
     
+    async def get_nearest_expiry(self) -> str:
+        """Get nearest expiry date from Dhan API"""
+        try:
+            response = self.dhan.expiry_list(
+                under_security_id='13',
+                under_exchange_segment='IDX_I'
+            )
+            logger.info(f"Expiry list response: {response}")
+            
+            if response and response.get('status') == 'success':
+                data = response.get('data', {})
+                if isinstance(data, dict) and 'data' in data:
+                    data = data.get('data', [])
+                
+                expiries = data if isinstance(data, list) else []
+                
+                if expiries:
+                    # Sort expiries and get the nearest one
+                    from datetime import datetime
+                    today = datetime.now().date()
+                    
+                    valid_expiries = []
+                    for exp in expiries:
+                        try:
+                            # Handle different date formats
+                            if isinstance(exp, str):
+                                if '-' in exp:
+                                    exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
+                                elif '/' in exp:
+                                    exp_date = datetime.strptime(exp, "%d/%m/%Y").date()
+                                else:
+                                    continue
+                                
+                                if exp_date >= today:
+                                    valid_expiries.append((exp_date, exp))
+                        except:
+                            continue
+                    
+                    if valid_expiries:
+                        valid_expiries.sort(key=lambda x: x[0])
+                        nearest = valid_expiries[0][1]
+                        logger.info(f"Nearest expiry: {nearest}")
+                        return nearest
+            
+            logger.warning("Could not get expiry list, using calculated expiry")
+        except Exception as e:
+            logger.error(f"Error getting expiry list: {e}")
+        
+        # Fallback: calculate Thursday expiry
+        ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+        days_until_thursday = (3 - ist.weekday()) % 7
+        if days_until_thursday == 0 and ist.hour >= 15:
+            days_until_thursday = 7
+        expiry_date = ist + timedelta(days=days_until_thursday)
+        return expiry_date.strftime("%Y-%m-%d")
+    
     async def get_atm_option_security_id(self, strike: int, option_type: str, expiry: str = None) -> str:
         """Get security ID for ATM option from option chain"""
         try:
+            if not expiry:
+                expiry = await self.get_nearest_expiry()
+            
             chain = await self.get_option_chain(expiry=expiry)
             
             if chain and chain.get('status') == 'success':
@@ -438,11 +496,11 @@ class DhanAPI:
                 
                 # Search for matching strike and option type
                 for item in data if isinstance(data, list) else []:
-                    item_strike = item.get('strikePrice', 0)
-                    item_type = item.get('optionType', '')  # CE or PE
+                    item_strike = item.get('strikePrice', 0) or item.get('strike_price', 0)
+                    item_type = item.get('optionType', '') or item.get('option_type', '')  # CE or PE
                     
-                    if int(item_strike) == strike and item_type == option_type:
-                        security_id = item.get('securityId') or item.get('security_id')
+                    if int(item_strike) == strike and item_type.upper() == option_type.upper():
+                        security_id = item.get('securityId') or item.get('security_id') or item.get('ce_security_id') or item.get('pe_security_id')
                         if security_id:
                             logger.info(f"Found security ID {security_id} for {strike} {option_type}")
                             return str(security_id)
