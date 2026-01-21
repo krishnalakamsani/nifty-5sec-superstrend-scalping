@@ -348,11 +348,6 @@ supertrend_indicator = SuperTrend(period=config['supertrend_period'], multiplier
 
 # Dhan API helper class
 class DhanAPI:
-    # Exchange segment constants
-    NSE = dhanhq.NSE
-    NSE_FNO = dhanhq.NSE_FNO
-    IDX = dhanhq.IDX
-    
     def __init__(self, access_token: str, client_id: str):
         self.access_token = access_token
         self.client_id = client_id
@@ -361,11 +356,25 @@ class DhanAPI:
     async def get_nifty_ltp(self) -> float:
         """Get Nifty 50 spot LTP using dhanhq library"""
         try:
-            # Use the official dhanhq library
-            # Security ID 13 is NIFTY 50 Index
+            # Use quote_data for LTP
+            response = self.dhan.quote_data(
+                security_id='13',
+                exchange_segment=self.dhan.INDEX
+            )
+            
+            logger.info(f"Dhan quote response: {response}")
+            
+            if response and response.get('status') == 'success':
+                data = response.get('data', {})
+                if 'last_price' in data:
+                    return float(data['last_price'])
+                if 'ltp' in data:
+                    return float(data['ltp'])
+            
+            # Fallback: Try intraday data
             response = self.dhan.intraday_minute_data(
                 security_id='13',
-                exchange_segment=self.IDX,
+                exchange_segment=self.dhan.INDEX,
                 instrument_type='INDEX'
             )
             
@@ -374,25 +383,8 @@ class DhanAPI:
             if response and response.get('status') == 'success':
                 data = response.get('data', [])
                 if data and len(data) > 0:
-                    # Get the latest candle's close price
                     latest = data[-1]
                     return float(latest.get('close', 0))
-            
-            # Fallback: Try LTP API
-            ltp_response = self.dhan.get_ltp(
-                security_id='13',
-                exchange_segment=self.IDX
-            )
-            logger.info(f"Dhan LTP response: {ltp_response}")
-            
-            if ltp_response and 'data' in ltp_response:
-                ltp_data = ltp_response.get('data', {})
-                if 'last_price' in ltp_data:
-                    return float(ltp_data['last_price'])
-                # Try nested structure
-                for key in ltp_data:
-                    if isinstance(ltp_data[key], dict) and 'last_price' in ltp_data[key]:
-                        return float(ltp_data[key]['last_price'])
                     
         except Exception as e:
             logger.error(f"Error fetching Nifty LTP: {e}")
@@ -401,14 +393,16 @@ class DhanAPI:
     async def get_option_ltp(self, security_id: str) -> float:
         """Get option LTP"""
         try:
-            response = self.dhan.get_ltp(
+            response = self.dhan.quote_data(
                 security_id=security_id,
-                exchange_segment=self.NSE_FNO
+                exchange_segment=self.dhan.NSE_FNO
             )
-            if response and 'data' in response:
-                ltp_data = response.get('data', {})
-                if 'last_price' in ltp_data:
-                    return float(ltp_data['last_price'])
+            if response and response.get('status') == 'success':
+                data = response.get('data', {})
+                if 'last_price' in data:
+                    return float(data['last_price'])
+                if 'ltp' in data:
+                    return float(data['ltp'])
         except Exception as e:
             logger.error(f"Error fetching option LTP: {e}")
         return 0
@@ -417,8 +411,8 @@ class DhanAPI:
         """Get option chain for Nifty"""
         try:
             response = self.dhan.option_chain(
-                under_security_id=underlying_scrip,
-                under_exchange_segment=self.IDX
+                under_security_id=str(underlying_scrip),
+                under_exchange_segment=self.dhan.INDEX
             )
             return response if response else {}
         except Exception as e:
@@ -430,7 +424,7 @@ class DhanAPI:
         try:
             response = self.dhan.place_order(
                 security_id=security_id,
-                exchange_segment=self.NSE_FNO,
+                exchange_segment=self.dhan.NSE_FNO,
                 transaction_type=self.dhan.BUY if transaction_type == "BUY" else self.dhan.SELL,
                 quantity=qty,
                 order_type=self.dhan.MARKET,
