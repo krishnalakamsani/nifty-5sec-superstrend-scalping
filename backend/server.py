@@ -356,25 +356,26 @@ class DhanAPI:
     async def get_nifty_ltp(self) -> float:
         """Get Nifty 50 spot LTP using dhanhq library"""
         try:
-            # Use quote_data for LTP
-            response = self.dhan.quote_data(
-                security_id='13',
-                exchange_segment=self.dhan.INDEX
-            )
+            # Use quote_data with correct format - INDEX segment with security ID 13 for NIFTY
+            response = self.dhan.quote_data({
+                "IDX_I": [13]  # IDX_I for Index, 13 is NIFTY 50
+            })
             
             logger.info(f"Dhan quote response: {response}")
             
             if response and response.get('status') == 'success':
                 data = response.get('data', {})
-                if 'last_price' in data:
-                    return float(data['last_price'])
-                if 'ltp' in data:
-                    return float(data['ltp'])
+                # Navigate the response structure
+                idx_data = data.get('IDX_I', {}).get('13', {})
+                if idx_data:
+                    ltp = idx_data.get('last_price') or idx_data.get('ltp') or idx_data.get('close')
+                    if ltp:
+                        return float(ltp)
             
             # Fallback: Try intraday data
             response = self.dhan.intraday_minute_data(
                 security_id='13',
-                exchange_segment=self.dhan.INDEX,
+                exchange_segment='IDX_I',
                 instrument_type='INDEX'
             )
             
@@ -393,16 +394,16 @@ class DhanAPI:
     async def get_option_ltp(self, security_id: str) -> float:
         """Get option LTP"""
         try:
-            response = self.dhan.quote_data(
-                security_id=security_id,
-                exchange_segment=self.dhan.NSE_FNO
-            )
+            response = self.dhan.quote_data({
+                "NSE_FNO": [int(security_id)]
+            })
             if response and response.get('status') == 'success':
                 data = response.get('data', {})
-                if 'last_price' in data:
-                    return float(data['last_price'])
-                if 'ltp' in data:
-                    return float(data['ltp'])
+                fno_data = data.get('NSE_FNO', {}).get(security_id, {})
+                if fno_data:
+                    ltp = fno_data.get('last_price') or fno_data.get('ltp')
+                    if ltp:
+                        return float(ltp)
         except Exception as e:
             logger.error(f"Error fetching option LTP: {e}")
         return 0
@@ -412,7 +413,7 @@ class DhanAPI:
         try:
             response = self.dhan.option_chain(
                 under_security_id=str(underlying_scrip),
-                under_exchange_segment=self.dhan.INDEX
+                under_exchange_segment='IDX_I'
             )
             return response if response else {}
         except Exception as e:
