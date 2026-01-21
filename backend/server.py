@@ -443,7 +443,6 @@ class DhanAPI:
                 
                 if expiries:
                     # Sort expiries and get the nearest one
-                    from datetime import datetime
                     today = datetime.now().date()
                     
                     valid_expiries = []
@@ -473,12 +472,12 @@ class DhanAPI:
         except Exception as e:
             logger.error(f"Error getting expiry list: {e}")
         
-        # Fallback: calculate Thursday expiry
+        # Fallback: calculate next Monday (Nifty weekly now expires on Monday)
         ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
-        days_until_thursday = (3 - ist.weekday()) % 7
-        if days_until_thursday == 0 and ist.hour >= 15:
-            days_until_thursday = 7
-        expiry_date = ist + timedelta(days=days_until_thursday)
+        days_until_monday = (7 - ist.weekday()) % 7
+        if days_until_monday == 0 and ist.hour >= 15:
+            days_until_monday = 7
+        expiry_date = ist + timedelta(days=days_until_monday)
         return expiry_date.strftime("%Y-%m-%d")
     
     async def get_atm_option_security_id(self, strike: int, option_type: str, expiry: str = None) -> str:
