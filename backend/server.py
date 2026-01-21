@@ -802,41 +802,50 @@ class TradingBot:
     
     async def enter_position(self, option_type: str, strike: int, nifty_ltp: float):
         """Enter a new position"""
-        # Get nearest weekly expiry
-        ist = get_ist_time()
-        days_until_thursday = (3 - ist.weekday()) % 7
-        if days_until_thursday == 0 and ist.hour >= 15:
-            days_until_thursday = 7
-        expiry_date = ist + timedelta(days=days_until_thursday)
-        expiry = expiry_date.strftime("%Y-%m-%d")
-        
         trade_id = f"T{datetime.now().strftime('%Y%m%d%H%M%S')}"
         
         # In paper mode, simulate entry
         if bot_state['mode'] == 'paper':
-            # Simulate option price (rough approximation based on moneyness)
+            # Get nearest expiry for display
+            ist = get_ist_time()
+            days_until_thursday = (3 - ist.weekday()) % 7
+            if days_until_thursday == 0 and ist.hour >= 15:
+                days_until_thursday = 7
+            expiry_date = ist + timedelta(days=days_until_thursday)
+            expiry = expiry_date.strftime("%Y-%m-%d")
+            
+            # Simulate option price based on moneyness
             intrinsic = max(0, nifty_ltp - strike) if option_type == 'CE' else max(0, strike - nifty_ltp)
-            time_value = 50 + (abs(nifty_ltp - strike) / 100)  # Simplified time value
+            time_value = 50 + (abs(nifty_ltp - strike) / 100)
             simulated_price = intrinsic + time_value
             entry_price = round(simulated_price, 2)
             security_id = f"SIM_NIFTY_{strike}_{option_type}"
             
             logger.info(f"Paper trade: {option_type} {strike} @ {entry_price}")
         else:
-            # Live trading - get security ID and place order
+            # Live trading - get actual expiry and security ID
             if not self.dhan:
                 logger.error("Dhan API not initialized")
+                return
+            
+            # Get nearest expiry from API
+            expiry = await self.dhan.get_nearest_expiry()
+            logger.info(f"Using expiry: {expiry} for live trade")
+            
+            if not expiry:
+                logger.error("Could not determine expiry date")
                 return
             
             # Get security ID from option chain
             security_id = await self.dhan.get_atm_option_security_id(strike, option_type, expiry)
             
             if not security_id:
-                logger.error(f"Could not find security ID for {strike} {option_type}")
+                logger.error(f"Could not find security ID for {strike} {option_type} expiry {expiry}")
                 return
             
             # Place market order
             result = await self.dhan.place_order(security_id, "BUY", config['order_qty'])
+            logger.info(f"Order placement result: {result}")
             
             if not result.get('orderId') and result.get('status') != 'success':
                 logger.error(f"Failed to place entry order: {result}")
@@ -847,7 +856,7 @@ class TradingBot:
             if not entry_price:
                 entry_price = await self.dhan.get_option_ltp(security_id)
             
-            logger.info(f"Live trade placed: {option_type} {strike} @ {entry_price}, Order: {result}")
+            logger.info(f"Live trade placed: {option_type} {strike} expiry {expiry} @ {entry_price}")
         
         # Save position
         self.current_position = {
