@@ -1088,7 +1088,7 @@ class TradingBot:
         logger.info(f"Entered position: {option_type} {strike} @ {self.entry_price}")
     
     async def check_trailing_sl(self, current_ltp: float):
-        """Check and update trailing stop loss"""
+        """Update trailing SL values (called every tick for display)"""
         if not self.current_position:
             return
         
@@ -1107,11 +1107,68 @@ class TradingBot:
             if self.trailing_sl is None or new_sl > self.trailing_sl:
                 self.trailing_sl = new_sl
                 bot_state['trailing_sl'] = self.trailing_sl
+    
+    async def check_trailing_sl_on_close(self, current_ltp: float) -> bool:
+        """Check if trailing SL is hit on candle close - returns True if exited"""
+        if not self.current_position:
+            return False
         
-        # Check if trailing SL is hit
+        # Update trailing SL values first
+        await self.check_trailing_sl(current_ltp)
+        
+        # Check if trailing SL is hit on candle close
         if self.trailing_sl and current_ltp <= self.trailing_sl:
             pnl = (current_ltp - self.entry_price) * config['order_qty']
+            logger.info(f"Trailing SL hit on candle close: LTP={current_ltp}, SL={self.trailing_sl}")
             await self.close_position(current_ltp, pnl, "Trailing SL Hit")
+            return True
+        
+        return False
+    
+    async def process_signal_on_close(self, signal: str, nifty_ltp: float) -> bool:
+        """Process SuperTrend signal on candle close - returns True if position was exited"""
+        exited = False
+        
+        # Check for position exit on signal reversal (only on candle close)
+        if self.current_position:
+            position_type = self.current_position.get('option_type', '')
+            
+            # Exit CE on RED signal
+            if position_type == 'CE' and signal == 'RED':
+                exit_price = bot_state['current_option_ltp']
+                pnl = (exit_price - self.entry_price) * config['order_qty']
+                logger.info(f"SuperTrend reversal on candle close: Exiting CE position")
+                await self.close_position(exit_price, pnl, "SuperTrend Reversal")
+                exited = True
+                return exited
+            
+            # Exit PE on GREEN signal
+            if position_type == 'PE' and signal == 'GREEN':
+                exit_price = bot_state['current_option_ltp']
+                pnl = (exit_price - self.entry_price) * config['order_qty']
+                logger.info(f"SuperTrend reversal on candle close: Exiting PE position")
+                await self.close_position(exit_price, pnl, "SuperTrend Reversal")
+                exited = True
+                return exited
+        
+        # Check if new trade is allowed (only on candle close)
+        if self.current_position:
+            return exited  # Only 1 trade at a time
+        
+        if not can_take_new_trade():
+            return exited
+        
+        if bot_state['daily_trades'] >= config['max_trades_per_day']:
+            return exited
+        
+        # Enter new position on candle close
+        option_type = 'PE' if signal == 'RED' else 'CE'
+        atm_strike = round_to_nearest_50(nifty_ltp)
+        
+        logger.info(f"Candle close entry: {option_type} @ strike {atm_strike} (Nifty: {nifty_ltp})")
+        await self.enter_position(option_type, atm_strike, nifty_ltp)
+        
+        return exited
 
 # Global bot instance
 trading_bot = TradingBot()
