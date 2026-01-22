@@ -810,12 +810,13 @@ class TradingBot:
         
         # In paper mode, simulate entry
         if bot_state['mode'] == 'paper':
-            # Get nearest expiry for display
+            # Get nearest Tuesday expiry (Nifty weekly expires on Tuesday)
             ist = get_ist_time()
-            days_until_thursday = (3 - ist.weekday()) % 7
-            if days_until_thursday == 0 and ist.hour >= 15:
-                days_until_thursday = 7
-            expiry_date = ist + timedelta(days=days_until_thursday)
+            days_until_tuesday = (1 - ist.weekday()) % 7  # Tuesday is weekday 1
+            if days_until_tuesday == 0:
+                if ist.hour >= 15 and ist.minute >= 30:
+                    days_until_tuesday = 7
+            expiry_date = ist + timedelta(days=days_until_tuesday)
             expiry = expiry_date.strftime("%Y-%m-%d")
             
             # Simulate option price based on moneyness
