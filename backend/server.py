@@ -442,7 +442,7 @@ class DhanAPI:
             logger.error(f"Error fetching option LTP for {security_id}: {e}")
         return 0
     
-    async def get_option_chain(self, underlying_scrip: int = 13, expiry: str = None) -> dict:
+    async def get_option_chain(self, underlying_scrip: int = 13, expiry: str = None, force_refresh: bool = False) -> dict:
         """Get option chain for Nifty with caching"""
         try:
             # If no expiry provided, get nearest expiry from API
@@ -457,25 +457,30 @@ class DhanAPI:
             cache_key = f"{underlying_scrip}_{expiry}"
             now = datetime.now()
             
-            if (self._option_chain_cache.get(cache_key) and 
-                self._option_chain_cache_time and 
-                (now - self._option_chain_cache_time).seconds < self._cache_duration):
+            # Use shorter cache duration if there's an open position
+            cache_duration = self._position_cache_duration if bot_state.get('current_position') else self._cache_duration
+            
+            cache_time = self._option_chain_cache_time.get(cache_key)
+            if (not force_refresh and 
+                self._option_chain_cache.get(cache_key) and 
+                cache_time and 
+                (now - cache_time).seconds < cache_duration):
                 logger.debug(f"Using cached option chain for {cache_key}")
                 return self._option_chain_cache[cache_key]
             
-            logger.info(f"Fetching option chain: security_id={underlying_scrip}, segment=IDX_I, expiry={expiry}")
+            logger.info(f"Fetching fresh option chain: security_id={underlying_scrip}, expiry={expiry}")
             
             response = self.dhan.option_chain(
-                under_security_id=underlying_scrip,  # Should be int, not string
+                under_security_id=underlying_scrip,
                 under_exchange_segment='IDX_I',
                 expiry=expiry
             )
-            logger.info(f"Option chain response for expiry {expiry}: {str(response)[:500]}")
             
             # Cache successful response
             if response and response.get('status') == 'success':
                 self._option_chain_cache[cache_key] = response
-                self._option_chain_cache_time = now
+                self._option_chain_cache_time[cache_key] = now
+                logger.info(f"Option chain cached at {now.strftime('%H:%M:%S')}")
             
             return response if response else {}
         except Exception as e:
