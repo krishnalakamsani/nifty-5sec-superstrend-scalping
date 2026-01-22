@@ -386,9 +386,12 @@ class DhanAPI:
     async def get_option_ltp(self, security_id: str) -> float:
         """Get option LTP"""
         try:
+            logger.info(f"Fetching option LTP for security_id: {security_id}")
             response = self.dhan.quote_data({
                 "NSE_FNO": [int(security_id)]
             })
+            logger.info(f"Option LTP response for {security_id}: {response}")
+            
             if response and response.get('status') == 'success':
                 data = response.get('data', {})
                 if isinstance(data, dict) and 'data' in data:
@@ -398,9 +401,18 @@ class DhanAPI:
                 if fno_data:
                     ltp = fno_data.get('last_price')
                     if ltp and ltp > 0:
+                        logger.info(f"Option {security_id} LTP: {ltp}")
                         return float(ltp)
+                
+                # Try alternate key format
+                fno_data = data.get('NSE_FNO', {}).get(security_id, {})
+                if fno_data:
+                    ltp = fno_data.get('last_price')
+                    if ltp and ltp > 0:
+                        return float(ltp)
+                        
         except Exception as e:
-            logger.error(f"Error fetching option LTP: {e}")
+            logger.error(f"Error fetching option LTP for {security_id}: {e}")
         return 0
     
     async def get_option_chain(self, underlying_scrip: int = 13, expiry: str = None) -> dict:
