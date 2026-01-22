@@ -783,25 +783,31 @@ class TradingBot:
                     security_id = self.current_position.get('security_id', '')
                     strike = self.current_position.get('strike', 0)
                     option_type = self.current_position.get('option_type', '')
+                    expiry = self.current_position.get('expiry', '')
                     nifty_ltp = bot_state['nifty_ltp']
                     
-                    # Try to fetch real option LTP from Dhan (works for both paper and live)
+                    # Try to fetch real option LTP from cached option chain
                     real_ltp_fetched = False
                     
                     if self.dhan and strike and option_type:
-                        # Get real security ID and fetch actual price
                         try:
-                            expiry = self.current_position.get('expiry', '')
-                            real_security_id = await self.dhan.get_atm_option_security_id(strike, option_type, expiry)
+                            # First refresh option chain cache periodically (every 60s)
+                            await self.dhan.get_option_chain(expiry=expiry)
                             
-                            if real_security_id:
-                                option_ltp = await self.dhan.get_option_ltp(real_security_id)
-                                if option_ltp > 0:
-                                    # Round to 0.05 tick
-                                    option_ltp = round(option_ltp / 0.05) * 0.05
-                                    bot_state['current_option_ltp'] = round(option_ltp, 2)
-                                    real_ltp_fetched = True
-                                    await self.check_trailing_sl(option_ltp)
+                            # Get LTP from cache (no extra API call)
+                            option_ltp = await self.dhan.get_option_ltp(
+                                security_id=security_id,
+                                strike=strike,
+                                option_type=option_type,
+                                expiry=expiry
+                            )
+                            
+                            if option_ltp > 0:
+                                # Round to 0.05 tick
+                                option_ltp = round(option_ltp / 0.05) * 0.05
+                                bot_state['current_option_ltp'] = round(option_ltp, 2)
+                                real_ltp_fetched = True
+                                await self.check_trailing_sl(option_ltp)
                         except Exception as e:
                             logger.error(f"Error fetching real option LTP: {e}")
                     
