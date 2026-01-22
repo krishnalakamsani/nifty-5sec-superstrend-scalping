@@ -719,48 +719,55 @@ class TradingBot:
                 # Update position PnL
                 if self.current_position:
                     security_id = self.current_position.get('security_id', '')
+                    strike = self.current_position.get('strike', 0)
+                    option_type = self.current_position.get('option_type', '')
+                    nifty_ltp = bot_state['nifty_ltp']
                     
-                    # Paper mode - simulate option price movement
-                    if bot_state['mode'] == 'paper' or security_id.startswith('SIM_'):
-                        # Simulate option price based on Nifty movement
-                        strike = self.current_position.get('strike', 0)
-                        option_type = self.current_position.get('option_type', '')
-                        nifty_ltp = bot_state['nifty_ltp']
+                    # Try to fetch real option LTP from Dhan (works for both paper and live)
+                    real_ltp_fetched = False
+                    
+                    if self.dhan and strike and option_type:
+                        # Get real security ID and fetch actual price
+                        try:
+                            expiry = self.current_position.get('expiry', '')
+                            real_security_id = await self.dhan.get_atm_option_security_id(strike, option_type, expiry)
+                            
+                            if real_security_id:
+                                option_ltp = await self.dhan.get_option_ltp(real_security_id)
+                                if option_ltp > 0:
+                                    # Round to 0.05 tick
+                                    option_ltp = round(option_ltp / 0.05) * 0.05
+                                    bot_state['current_option_ltp'] = round(option_ltp, 2)
+                                    real_ltp_fetched = True
+                                    await self.check_trailing_sl(option_ltp)
+                        except Exception as e:
+                            logger.error(f"Error fetching real option LTP: {e}")
+                    
+                    # Fallback to simulation only if real fetch failed
+                    if not real_ltp_fetched and strike and nifty_ltp:
+                        # Calculate simulated option price
+                        distance_from_atm = abs(nifty_ltp - strike)
                         
-                        if strike and nifty_ltp:
-                            # Calculate realistic option price
-                            distance_from_atm = abs(nifty_ltp - strike)
-                            
-                            if option_type == 'CE':
-                                intrinsic = max(0, nifty_ltp - strike)
-                            else:  # PE
-                                intrinsic = max(0, strike - nifty_ltp)
-                            
-                            # Time value decays as we move away from ATM
-                            atm_time_value = 150
-                            time_decay_factor = max(0, 1 - (distance_from_atm / 500))
-                            time_value = atm_time_value * time_decay_factor
-                            
-                            simulated_ltp = intrinsic + time_value
-                            
-                            # Add small random movement (within tick boundaries)
-                            import random
-                            tick_movement = random.choice([-0.10, -0.05, 0, 0.05, 0.10])
-                            simulated_ltp += tick_movement
-                            
-                            # Round to 0.05 tick size
-                            simulated_ltp = round(simulated_ltp / 0.05) * 0.05
-                            simulated_ltp = max(0.05, round(simulated_ltp, 2))
-                            
-                            bot_state['current_option_ltp'] = simulated_ltp
-                            await self.check_trailing_sl(simulated_ltp)
-                    
-                    # Live mode - fetch real option LTP
-                    elif security_id and self.dhan:
-                        option_ltp = await self.dhan.get_option_ltp(security_id)
-                        if option_ltp > 0:
-                            bot_state['current_option_ltp'] = option_ltp
-                            await self.check_trailing_sl(option_ltp)
+                        if option_type == 'CE':
+                            intrinsic = max(0, nifty_ltp - strike)
+                        else:  # PE
+                            intrinsic = max(0, strike - nifty_ltp)
+                        
+                        atm_time_value = 150
+                        time_decay_factor = max(0, 1 - (distance_from_atm / 500))
+                        time_value = atm_time_value * time_decay_factor
+                        
+                        simulated_ltp = intrinsic + time_value
+                        
+                        import random
+                        tick_movement = random.choice([-0.10, -0.05, 0, 0.05, 0.10])
+                        simulated_ltp += tick_movement
+                        
+                        simulated_ltp = round(simulated_ltp / 0.05) * 0.05
+                        simulated_ltp = max(0.05, round(simulated_ltp, 2))
+                        
+                        bot_state['current_option_ltp'] = simulated_ltp
+                        await self.check_trailing_sl(simulated_ltp)
                 
                 # Broadcast state update
                 await manager.broadcast({
