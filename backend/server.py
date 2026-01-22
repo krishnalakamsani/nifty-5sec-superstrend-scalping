@@ -511,18 +511,35 @@ class DhanAPI:
             if chain and chain.get('status') == 'success':
                 data = chain.get('data', {})
                 if isinstance(data, dict) and 'data' in data:
-                    data = data.get('data', [])
+                    data = data.get('data', {})
                 
-                # Search for matching strike and option type
-                for item in data if isinstance(data, list) else []:
-                    item_strike = item.get('strikePrice', 0) or item.get('strike_price', 0)
-                    item_type = item.get('optionType', '') or item.get('option_type', '')  # CE or PE
-                    
-                    if int(item_strike) == strike and item_type.upper() == option_type.upper():
-                        security_id = item.get('securityId') or item.get('security_id') or item.get('ce_security_id') or item.get('pe_security_id')
-                        if security_id:
-                            logger.info(f"Found security ID {security_id} for {strike} {option_type}")
-                            return str(security_id)
+                # Option chain structure: data.oc.{strike}.ce/pe.security_id
+                oc_data = data.get('oc', {})
+                
+                # Try different strike formats
+                strike_keys = [
+                    f"{strike}.000000",  # Format: 25400.000000
+                    f"{strike}.0",       # Format: 25400.0
+                    str(strike),         # Format: 25400
+                    float(strike),       # Format: 25400.0 as float
+                ]
+                
+                for strike_key in strike_keys:
+                    strike_data = oc_data.get(str(strike_key), {})
+                    if strike_data:
+                        # Get CE or PE data
+                        opt_key = 'ce' if option_type.upper() == 'CE' else 'pe'
+                        opt_data = strike_data.get(opt_key, {})
+                        
+                        if opt_data:
+                            security_id = opt_data.get('security_id')
+                            if security_id:
+                                logger.info(f"Found security ID {security_id} for {strike} {option_type} (key: {strike_key})")
+                                return str(security_id)
+                
+                # Log available strikes for debugging
+                available_strikes = list(oc_data.keys())[:10]
+                logger.warning(f"Strike {strike} not found. Available strikes sample: {available_strikes}")
             
             logger.warning(f"Could not find security ID for strike {strike} {option_type}")
         except Exception as e:
