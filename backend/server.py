@@ -819,14 +819,31 @@ class TradingBot:
             expiry_date = ist + timedelta(days=days_until_tuesday)
             expiry = expiry_date.strftime("%Y-%m-%d")
             
-            # Simulate option price based on moneyness
-            intrinsic = max(0, nifty_ltp - strike) if option_type == 'CE' else max(0, strike - nifty_ltp)
-            time_value = 50 + (abs(nifty_ltp - strike) / 100)
+            # Simulate option price - more realistic for ATM options
+            # ATM weekly options typically trade around 100-200 range
+            distance_from_atm = abs(nifty_ltp - strike)
+            
+            if option_type == 'CE':
+                intrinsic = max(0, nifty_ltp - strike)
+            else:  # PE
+                intrinsic = max(0, strike - nifty_ltp)
+            
+            # Time value for ATM options (higher for ATM, lower for OTM/ITM)
+            # ATM options have highest time value ~120-180
+            atm_time_value = 150  # Base time value for ATM
+            time_decay_factor = max(0, 1 - (distance_from_atm / 500))  # Decays as we move away from ATM
+            time_value = atm_time_value * time_decay_factor
+            
             simulated_price = intrinsic + time_value
+            
+            # Round to 0.05 tick size (Nifty options tick)
+            simulated_price = round(simulated_price / 0.05) * 0.05
+            simulated_price = max(0.05, simulated_price)  # Minimum tick
+            
             entry_price = round(simulated_price, 2)
             security_id = f"SIM_NIFTY_{strike}_{option_type}"
             
-            logger.info(f"Paper trade: {option_type} {strike} @ {entry_price}")
+            logger.info(f"Paper trade: {option_type} {strike} @ {entry_price} (Nifty: {nifty_ltp})")
         else:
             # Live trading - get actual expiry and security ID
             if not self.dhan:
