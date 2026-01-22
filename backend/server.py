@@ -716,20 +716,29 @@ class TradingBot:
                         nifty_ltp = bot_state['nifty_ltp']
                         
                         if strike and nifty_ltp:
-                            # Simplified delta-based simulation
+                            # Calculate realistic option price
+                            distance_from_atm = abs(nifty_ltp - strike)
+                            
                             if option_type == 'CE':
                                 intrinsic = max(0, nifty_ltp - strike)
                             else:  # PE
                                 intrinsic = max(0, strike - nifty_ltp)
                             
-                            # Add some time value that decays
-                            time_value = 50 + (abs(nifty_ltp - strike) / 100)
+                            # Time value decays as we move away from ATM
+                            atm_time_value = 150
+                            time_decay_factor = max(0, 1 - (distance_from_atm / 500))
+                            time_value = atm_time_value * time_decay_factor
+                            
                             simulated_ltp = intrinsic + time_value
                             
-                            # Add some random movement to simulate market
+                            # Add small random movement (within tick boundaries)
                             import random
-                            simulated_ltp += random.uniform(-2, 2)
-                            simulated_ltp = max(1, round(simulated_ltp, 2))
+                            tick_movement = random.choice([-0.10, -0.05, 0, 0.05, 0.10])
+                            simulated_ltp += tick_movement
+                            
+                            # Round to 0.05 tick size
+                            simulated_ltp = round(simulated_ltp / 0.05) * 0.05
+                            simulated_ltp = max(0.05, round(simulated_ltp, 2))
                             
                             bot_state['current_option_ltp'] = simulated_ltp
                             await self.check_trailing_sl(simulated_ltp)
