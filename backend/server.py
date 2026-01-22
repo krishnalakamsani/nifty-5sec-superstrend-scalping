@@ -420,7 +420,7 @@ class DhanAPI:
         return 0
     
     async def get_option_chain(self, underlying_scrip: int = 13, expiry: str = None) -> dict:
-        """Get option chain for Nifty"""
+        """Get option chain for Nifty with caching"""
         try:
             # If no expiry provided, get nearest expiry from API
             if not expiry:
@@ -430,6 +430,16 @@ class DhanAPI:
                 logger.error("Could not determine expiry date")
                 return {}
             
+            # Check cache
+            cache_key = f"{underlying_scrip}_{expiry}"
+            now = datetime.now()
+            
+            if (self._option_chain_cache.get(cache_key) and 
+                self._option_chain_cache_time and 
+                (now - self._option_chain_cache_time).seconds < self._cache_duration):
+                logger.debug(f"Using cached option chain for {cache_key}")
+                return self._option_chain_cache[cache_key]
+            
             logger.info(f"Fetching option chain: security_id={underlying_scrip}, segment=IDX_I, expiry={expiry}")
             
             response = self.dhan.option_chain(
@@ -438,6 +448,12 @@ class DhanAPI:
                 expiry=expiry
             )
             logger.info(f"Option chain response for expiry {expiry}: {str(response)[:500]}")
+            
+            # Cache successful response
+            if response and response.get('status') == 'success':
+                self._option_chain_cache[cache_key] = response
+                self._option_chain_cache_time = now
+            
             return response if response else {}
         except Exception as e:
             logger.error(f"Error fetching option chain: {e}")
