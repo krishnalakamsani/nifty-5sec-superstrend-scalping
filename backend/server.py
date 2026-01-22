@@ -797,10 +797,10 @@ class TradingBot:
                     
                     if self.dhan and strike and option_type:
                         try:
-                            # First refresh option chain cache periodically (every 60s)
-                            await self.dhan.get_option_chain(expiry=expiry)
+                            # Force refresh option chain to get latest prices
+                            await self.dhan.get_option_chain(expiry=expiry, force_refresh=False)
                             
-                            # Get LTP from cache (no extra API call)
+                            # Get LTP from cache
                             option_ltp = await self.dhan.get_option_ltp(
                                 security_id=security_id,
                                 strike=strike,
