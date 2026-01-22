@@ -444,8 +444,9 @@ class DhanAPI:
         try:
             # Try different segment names
             for segment in ['IDX_I', 'NSE_FNO', 'INDEX']:
+                logger.info(f"Trying expiry_list with segment: {segment}")
                 response = self.dhan.expiry_list(
-                    under_security_id='13',
+                    under_security_id=13,  # Integer, not string
                     under_exchange_segment=segment
                 )
                 logger.info(f"Expiry list response for {segment}: {response}")
