@@ -761,6 +761,7 @@ class TradingBot:
         logger.info("Trading loop started")
         candle_start_time = datetime.now()
         high, low, close = 0, float('inf'), 0
+        last_exit_candle_time = None  # Track when we last exited to prevent immediate re-entry
         
         while self.running:
             try:
@@ -771,6 +772,7 @@ class TradingBot:
                     bot_state['daily_pnl'] = 0.0
                     bot_state['daily_max_loss_triggered'] = False
                     bot_state['max_drawdown'] = 0.0
+                    last_exit_candle_time = None
                 
                 # Force square-off at 3:25 PM
                 if should_force_squareoff() and self.current_position:
@@ -804,7 +806,7 @@ class TradingBot:
                         if option_ltp > 0:
                             option_ltp = round(option_ltp / 0.05) * 0.05  # Round to tick
                             bot_state['current_option_ltp'] = round(option_ltp, 2)
-                            await self.check_trailing_sl(option_ltp)
+                            # DON'T check trailing SL here - only on candle close
                     else:
                         # No position - just fetch Nifty LTP
                         nifty_ltp = await self.dhan.get_nifty_ltp()
@@ -823,6 +825,8 @@ class TradingBot:
                 # Check if 5-second candle is complete
                 elapsed = (datetime.now() - candle_start_time).total_seconds()
                 if elapsed >= config['candle_interval']:
+                    current_candle_time = datetime.now()
+                    
                     # Process candle and get SuperTrend signal
                     if high > 0 and low < float('inf'):
                         st_value, signal = supertrend_indicator.add_candle(high, low, close)
@@ -831,14 +835,36 @@ class TradingBot:
                             bot_state['supertrend_value'] = st_value
                             bot_state['last_supertrend_signal'] = signal
                             
-                            # Trading logic
-                            await self.process_signal(signal, close)
+                            logger.info(f"Candle close: H={high:.2f} L={low:.2f} C={close:.2f} | SuperTrend={signal}")
+                            
+                            # Check trailing SL on candle close
+                            if self.current_position:
+                                option_ltp = bot_state['current_option_ltp']
+                                sl_hit = await self.check_trailing_sl_on_close(option_ltp)
+                                
+                                if sl_hit:
+                                    last_exit_candle_time = current_candle_time
+                                    logger.info("Trailing SL hit on candle close, will wait for next candle to re-enter")
+                            
+                            # Trading logic - only process if not just exited
+                            can_trade = True
+                            if last_exit_candle_time:
+                                # Wait at least 1 candle after exit before re-entering
+                                time_since_exit = (current_candle_time - last_exit_candle_time).total_seconds()
+                                if time_since_exit < config['candle_interval']:
+                                    can_trade = False
+                                    logger.info(f"Waiting for candle close after exit ({time_since_exit:.1f}s)")
+                            
+                            if can_trade:
+                                exited = await self.process_signal_on_close(signal, close)
+                                if exited:
+                                    last_exit_candle_time = current_candle_time
                     
                     # Reset candle
                     candle_start_time = datetime.now()
                     high, low, close = 0, float('inf'), 0
                 
-                # Handle paper mode simulation for option LTP
+                # Handle paper mode simulation for option LTP (real-time update for display only)
                 if self.current_position:
                     security_id = self.current_position.get('security_id', '')
                     
