@@ -925,42 +925,6 @@ class TradingBot:
                 logger.error(f"Error in trading loop: {e}")
                 await asyncio.sleep(5)
     
-    async def process_signal(self, signal: str, nifty_ltp: float):
-        """Process SuperTrend signal"""
-        # Check for position exit on signal reversal
-        if self.current_position:
-            position_type = self.current_position.get('option_type', '')
-            
-            # Exit CE on RED signal
-            if position_type == 'CE' and signal == 'RED':
-                exit_price = bot_state['current_option_ltp']
-                pnl = (exit_price - self.entry_price) * config['order_qty']
-                await self.close_position(exit_price, pnl, "SuperTrend Reversal")
-                return
-            
-            # Exit PE on GREEN signal
-            if position_type == 'PE' and signal == 'GREEN':
-                exit_price = bot_state['current_option_ltp']
-                pnl = (exit_price - self.entry_price) * config['order_qty']
-                await self.close_position(exit_price, pnl, "SuperTrend Reversal")
-                return
-        
-        # Check if new trade is allowed
-        if self.current_position:
-            return  # Only 1 trade at a time
-        
-        if not can_take_new_trade():
-            return
-        
-        if bot_state['daily_trades'] >= config['max_trades_per_day']:
-            return
-        
-        # Enter new position
-        option_type = 'PE' if signal == 'RED' else 'CE'
-        atm_strike = round_to_nearest_50(nifty_ltp)
-        
-        await self.enter_position(option_type, atm_strike, nifty_ltp)
-    
     async def enter_position(self, option_type: str, strike: int, nifty_ltp: float):
         """Enter a new position"""
         trade_id = f"T{datetime.now().strftime('%Y%m%d%H%M%S')}"
