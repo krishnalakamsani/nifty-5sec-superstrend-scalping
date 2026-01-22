@@ -387,9 +387,31 @@ class DhanAPI:
             logger.error(f"Error fetching Nifty LTP: {e}")
         return 0
     
-    async def get_option_ltp(self, security_id: str) -> float:
-        """Get option LTP"""
+    async def get_option_ltp(self, security_id: str, strike: int = None, option_type: str = None, expiry: str = None) -> float:
+        """Get option LTP - first try from cached option chain, then API"""
         try:
+            # First try to get from cached option chain (no API call needed)
+            if strike and option_type:
+                cache_key = f"13_{expiry}" if expiry else None
+                if cache_key and self._option_chain_cache.get(cache_key):
+                    chain = self._option_chain_cache[cache_key]
+                    data = chain.get('data', {})
+                    if isinstance(data, dict) and 'data' in data:
+                        data = data.get('data', {})
+                    
+                    oc_data = data.get('oc', {})
+                    strike_key = f"{strike}.000000"
+                    strike_data = oc_data.get(strike_key, {})
+                    
+                    if strike_data:
+                        opt_key = 'ce' if option_type.upper() == 'CE' else 'pe'
+                        opt_data = strike_data.get(opt_key, {})
+                        ltp = opt_data.get('last_price', 0)
+                        if ltp and ltp > 0:
+                            logger.info(f"Got option LTP from cache: {strike} {option_type} = {ltp}")
+                            return float(ltp)
+            
+            # Fallback: Make API call (with rate limit awareness)
             logger.info(f"Fetching option LTP for security_id: {security_id}")
             response = self.dhan.quote_data({
                 "NSE_FNO": [int(security_id)]
