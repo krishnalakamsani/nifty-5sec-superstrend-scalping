@@ -352,6 +352,10 @@ class DhanAPI:
         self.access_token = access_token
         self.client_id = client_id
         self.dhan = dhanhq(client_id, access_token)
+        # Cache for option chain to avoid rate limiting
+        self._option_chain_cache = {}
+        self._option_chain_cache_time = None
+        self._cache_duration = 60  # Cache for 60 seconds
     
     async def get_nifty_ltp(self) -> float:
         """Get Nifty 50 spot LTP using dhanhq library"""
