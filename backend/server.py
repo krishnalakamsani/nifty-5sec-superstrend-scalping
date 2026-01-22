@@ -787,11 +787,33 @@ class TradingBot:
                 
                 # Fetch market data
                 if self.dhan:
-                    nifty_ltp = await self.dhan.get_nifty_ltp()
+                    # Check if we have an open position with a valid security ID
+                    has_position = self.current_position is not None
+                    option_security_id = None
+                    
+                    if has_position:
+                        security_id = self.current_position.get('security_id', '')
+                        if security_id and not security_id.startswith('SIM_'):
+                            option_security_id = int(security_id)
+                    
+                    # Fetch Nifty + Option LTP in single call if position exists
+                    if option_security_id:
+                        nifty_ltp, option_ltp = await self.dhan.get_nifty_and_option_ltp(option_security_id)
+                        if nifty_ltp > 0:
+                            bot_state['nifty_ltp'] = nifty_ltp
+                        if option_ltp > 0:
+                            option_ltp = round(option_ltp / 0.05) * 0.05  # Round to tick
+                            bot_state['current_option_ltp'] = round(option_ltp, 2)
+                            await self.check_trailing_sl(option_ltp)
+                    else:
+                        # No position - just fetch Nifty LTP
+                        nifty_ltp = await self.dhan.get_nifty_ltp()
+                        if nifty_ltp > 0:
+                            bot_state['nifty_ltp'] = nifty_ltp
+                    
+                    # Update candle data
+                    nifty_ltp = bot_state['nifty_ltp']
                     if nifty_ltp > 0:
-                        bot_state['nifty_ltp'] = nifty_ltp
-                        
-                        # Update candle data
                         if nifty_ltp > high:
                             high = nifty_ltp
                         if nifty_ltp < low:
