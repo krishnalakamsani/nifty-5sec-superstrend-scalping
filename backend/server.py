@@ -426,8 +426,10 @@ class DhanAPI:
                 logger.error("Could not determine expiry date")
                 return {}
             
+            logger.info(f"Fetching option chain: security_id={underlying_scrip}, segment=IDX_I, expiry={expiry}")
+            
             response = self.dhan.option_chain(
-                under_security_id=str(underlying_scrip),
+                under_security_id=underlying_scrip,  # Should be int, not string
                 under_exchange_segment='IDX_I',
                 expiry=expiry
             )
