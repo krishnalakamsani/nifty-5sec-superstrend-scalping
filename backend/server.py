@@ -904,58 +904,70 @@ class TradingBot:
         """Enter a new position"""
         trade_id = f"T{datetime.now().strftime('%Y%m%d%H%M%S')}"
         
-        # In paper mode, simulate entry
+        # Get nearest Tuesday expiry (Nifty weekly expires on Tuesday)
+        ist = get_ist_time()
+        days_until_tuesday = (1 - ist.weekday()) % 7  # Tuesday is weekday 1
+        if days_until_tuesday == 0:
+            if ist.hour >= 15 and ist.minute >= 30:
+                days_until_tuesday = 7
+        expiry_date = ist + timedelta(days=days_until_tuesday)
+        expiry = expiry_date.strftime("%Y-%m-%d")
+        
+        # Try to get REAL entry price from option chain (for both paper and live)
+        entry_price = 0
+        security_id = ""
+        
+        if self.dhan:
+            try:
+                # Get real expiry from API if possible
+                real_expiry = await self.dhan.get_nearest_expiry()
+                if real_expiry:
+                    expiry = real_expiry
+                
+                # Get security ID
+                security_id = await self.dhan.get_atm_option_security_id(strike, option_type, expiry)
+                
+                if security_id:
+                    # Get real price from option chain cache
+                    option_ltp = await self.dhan.get_option_ltp(
+                        security_id=security_id,
+                        strike=strike,
+                        option_type=option_type,
+                        expiry=expiry
+                    )
+                    if option_ltp > 0:
+                        entry_price = round(option_ltp / 0.05) * 0.05  # Round to tick
+                        entry_price = round(entry_price, 2)
+                        logger.info(f"Got real entry price from option chain: {entry_price}")
+            except Exception as e:
+                logger.error(f"Error getting real entry price: {e}")
+        
+        # Paper mode - don't place actual order
         if bot_state['mode'] == 'paper':
-            # Get nearest Tuesday expiry (Nifty weekly expires on Tuesday)
-            ist = get_ist_time()
-            days_until_tuesday = (1 - ist.weekday()) % 7  # Tuesday is weekday 1
-            if days_until_tuesday == 0:
-                if ist.hour >= 15 and ist.minute >= 30:
-                    days_until_tuesday = 7
-            expiry_date = ist + timedelta(days=days_until_tuesday)
-            expiry = expiry_date.strftime("%Y-%m-%d")
+            if not security_id:
+                security_id = f"SIM_NIFTY_{strike}_{option_type}"
             
-            # Simulate option price - more realistic for ATM options
-            # ATM weekly options typically trade around 100-200 range
-            distance_from_atm = abs(nifty_ltp - strike)
+            # If we couldn't get real price, use simulation as fallback
+            if entry_price <= 0:
+                distance_from_atm = abs(nifty_ltp - strike)
+                if option_type == 'CE':
+                    intrinsic = max(0, nifty_ltp - strike)
+                else:
+                    intrinsic = max(0, strike - nifty_ltp)
+                atm_time_value = 150
+                time_decay_factor = max(0, 1 - (distance_from_atm / 500))
+                time_value = atm_time_value * time_decay_factor
+                entry_price = round((intrinsic + time_value) / 0.05) * 0.05
+                entry_price = round(entry_price, 2)
+                logger.info(f"Using simulated entry price: {entry_price}")
             
-            if option_type == 'CE':
-                intrinsic = max(0, nifty_ltp - strike)
-            else:  # PE
-                intrinsic = max(0, strike - nifty_ltp)
-            
-            # Time value for ATM options (higher for ATM, lower for OTM/ITM)
-            # ATM options have highest time value ~120-180
-            atm_time_value = 150  # Base time value for ATM
-            time_decay_factor = max(0, 1 - (distance_from_atm / 500))  # Decays as we move away from ATM
-            time_value = atm_time_value * time_decay_factor
-            
-            simulated_price = intrinsic + time_value
-            
-            # Round to 0.05 tick size (Nifty options tick)
-            simulated_price = round(simulated_price / 0.05) * 0.05
-            simulated_price = max(0.05, simulated_price)  # Minimum tick
-            
-            entry_price = round(simulated_price, 2)
-            security_id = f"SIM_NIFTY_{strike}_{option_type}"
-            
-            logger.info(f"Paper trade: {option_type} {strike} @ {entry_price} (Nifty: {nifty_ltp})")
+            logger.info(f"Paper trade: {option_type} {strike} expiry {expiry} @ {entry_price}")
+        
         else:
-            # Live trading - get actual expiry and security ID
+            # Live trading - place actual order
             if not self.dhan:
                 logger.error("Dhan API not initialized")
                 return
-            
-            # Get nearest expiry from API
-            expiry = await self.dhan.get_nearest_expiry()
-            logger.info(f"Using expiry: {expiry} for live trade")
-            
-            if not expiry:
-                logger.error("Could not determine expiry date")
-                return
-            
-            # Get security ID from option chain
-            security_id = await self.dhan.get_atm_option_security_id(strike, option_type, expiry)
             
             if not security_id:
                 logger.error(f"Could not find security ID for {strike} {option_type} expiry {expiry}")
@@ -969,10 +981,10 @@ class TradingBot:
                 logger.error(f"Failed to place entry order: {result}")
                 return
             
-            # Get entry price from order or current LTP
-            entry_price = result.get('price', 0)
-            if not entry_price:
-                entry_price = await self.dhan.get_option_ltp(security_id)
+            # Get filled price from order response
+            filled_price = result.get('price', 0) or result.get('averagePrice', 0)
+            if filled_price and filled_price > 0:
+                entry_price = filled_price
             
             logger.info(f"Live trade placed: {option_type} {strike} expiry {expiry} @ {entry_price}")
         
