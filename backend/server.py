@@ -366,8 +366,6 @@ class DhanAPI:
                 "IDX_I": [13]  # IDX_I for Index, 13 is NIFTY 50
             })
             
-            logger.info(f"Dhan quote response: {response}")
-            
             if response and response.get('status') == 'success':
                 # Navigate nested structure: data.data.IDX_I.13.last_price
                 data = response.get('data', {})
@@ -387,6 +385,40 @@ class DhanAPI:
         except Exception as e:
             logger.error(f"Error fetching Nifty LTP: {e}")
         return 0
+    
+    async def get_nifty_and_option_ltp(self, option_security_id: int) -> tuple:
+        """Get both Nifty and Option LTP in a single API call"""
+        nifty_ltp = 0
+        option_ltp = 0
+        
+        try:
+            # Fetch both in single call to avoid rate limits
+            response = self.dhan.quote_data({
+                "IDX_I": [13],
+                "NSE_FNO": [option_security_id]
+            })
+            
+            if response and response.get('status') == 'success':
+                data = response.get('data', {})
+                if isinstance(data, dict) and 'data' in data:
+                    data = data.get('data', {})
+                
+                # Get Nifty LTP
+                idx_data = data.get('IDX_I', {}).get('13', {})
+                if idx_data:
+                    nifty_ltp = float(idx_data.get('last_price', 0))
+                
+                # Get Option LTP
+                fno_data = data.get('NSE_FNO', {}).get(str(option_security_id), {})
+                if fno_data:
+                    option_ltp = float(fno_data.get('last_price', 0))
+                    
+                logger.info(f"Quote: Nifty={nifty_ltp}, Option {option_security_id}={option_ltp}")
+                    
+        except Exception as e:
+            logger.error(f"Error fetching combined quote: {e}")
+        
+        return nifty_ltp, option_ltp
     
     async def get_option_ltp(self, security_id: str, strike: int = None, option_type: str = None, expiry: str = None) -> float:
         """Get option LTP - first try from cached option chain, then API"""
